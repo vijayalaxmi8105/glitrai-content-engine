@@ -1,306 +1,172 @@
-\# GlitrAI Mini Content Engine
+ GlitrAI Mini Content Engine
 
+Give it a product name and a description, and it does the rest: writes a smart image-generation prompt using an LLM, turns that into an actual product image, and keeps track of the whole job from start to finish — so you can watch it go from `pending` to a finished visual in real time.
 
+Built as part of the GlitrAI SDE Intern assignment.
 
-A mini content generation engine that takes a product name, description, and optional image URL, uses an LLM to craft an image-generation prompt, generates a product visual, and tracks the job status end-to-end.
+---
+ Try it live
 
+ **App**: [glitrai-content-engine-frontend.onrender.com](https://glitrai-content-engine-frontend.onrender.com)
+ **API**: [glitrai-content-engine-4g4v.onrender.com](https://glitrai-content-engine-4g4v.onrender.com)
+ **Code**: [github.com/vijayalaxmi8105/glitrai-content-engine](https://github.com/vijayalaxmi8105/glitrai-content-engine)
 
+ Heads up — this runs on Render's free tier, so if nobody's used it in a while, the backend takes a little nap. First request after that might take 30–60 seconds to wake it up. Totally normal, just give it a moment.
 
-\## 🔗 Live URLs
+---
 
+ How it actually works
 
+You type in a product name and description (an image URL is welcome too, but optional). Hit generate, and here's what happens behind the scenes:
 
-\- \*\*Frontend\*\*: https://glitrai-content-engine-frontend.onrender.com
-
-\- \*\*Backend API\*\*: https://glitrai-content-engine-4g4v.onrender.com
-
-\- \*\*GitHub Repo\*\*: https://github.com/vijayalaxmi8105/glitrai-content-engine
-
-
-
-> Note: Both services are hosted on Render's free tier. The backend may take 30–60 seconds to wake up if it has been idle.
-
-
-
-\## 🏗️ Architecture
-
-
-
-```
-
-User (Browser)
-
-&#x20;  │
-
-&#x20;  ▼
-
-Frontend (Static HTML/JS, Render Static Site)
-
-&#x20;  │  fetch() calls
-
-&#x20;  ▼
-
-Backend (Node.js + Express, Render Web Service)
-
-&#x20;  │
-
-&#x20;  ├──▶ Groq API (llama-3.3-70b-versatile) — generates an image prompt from product name/description
-
-&#x20;  ├──▶ Pollinations.ai — generates the image from that prompt (no API key required)
-
-&#x20;  └──▶ PostgreSQL (Neon) — persists job state (pending → processing → completed/failed)
+1. **The request lands** on the Express backend, and a new job gets saved to Postgres with status `pending`
+2. **Groq's LLM** (`llama-3.3-70b-versatile`) reads your product details and writes a genuinely good image-generation prompt — way better than just stuffing the description into an image model directly
+3. **Pollinations.ai** takes that prompt and generates an actual image, no API key needed
+4. **The job updates** to `completed` (or `failed`, with a reason, if something goes wrong along the way)
+5. **The frontend polls** for updates and shows you the result as soon as it's ready
 
 ```
+You  →  Frontend  →  Backend  →  Groq (writes the prompt)
+                          │
+                          └──▶  Pollinations.ai (makes the image)
+                          │
+                          └──▶  Postgres (remembers everything)
+```
 
+---
 
+ Built with
 
-\## 🛠️ Tech Stack
-
-
-
-| Layer | Technology |
-
+| What | Used for |
 |---|---|
+| Node.js + Express | Backend API |
+| Groq (`llama-3.3-70b-versatile`) | Turning product info into a good image prompt |
+| Pollinations.ai | Actually generating the image |
+| PostgreSQL (via Neon) | Keeping track of every job |
+| Plain HTML + JS | The frontend — no framework, kept it simple |
+| Render.com | Hosting both the API and the frontend, free tier |
 
-| Backend | Node.js + Express |
+---
 
-| LLM (prompt generation) | Groq API — `llama-3.3-70b-versatile` |
+ API Reference
 
-| Image generation | Pollinations.ai (free, no API key) |
-
-| Database | PostgreSQL (Neon, free tier) |
-
-| Frontend | Plain HTML + vanilla JS |
-
-| Hosting | Render.com (free tier, both backend and frontend) |
-
-
-
-\## 📡 API Endpoints
-
-
-
-\### `GET /health`
-
-Health check.
-
+### `GET /health`
+Just a heartbeat check.
 ```json
-
 { "status": "ok", "timestamp": "2026-07-26T19:45:27.129Z" }
-
 ```
 
-
-
-\### `POST /generate`
-
-Creates a new content generation job.
-
-
-
-\*\*Request body:\*\*
+### `POST /generate`
+Kicks off a new job.
 
 ```json
-
 {
-
-&#x20; "productName": "Ceramic Coffee Mug",
-
-&#x20; "description": "A hand-glazed ceramic mug perfect for your morning coffee",
-
-&#x20; "productImageUrl": "https://example.com/mug.jpg"
-
+  "productName": "Ceramic Coffee Mug",
+  "description": "A hand-glazed ceramic mug perfect for your morning coffee",
+  "productImageUrl": "https://example.com/mug.jpg"
 }
-
 ```
+*(`productImageUrl` is optional — leave it out and the image gets generated purely from the text.)*
 
-`productImageUrl` is optional.
-
-
-
-\*\*Response:\*\*
-
+Returns right away with the new job's id, while the actual generation happens in the background:
 ```json
-
 { "id": 5, "status": "pending" }
-
 ```
 
-
-
-The job is processed asynchronously:
-
-1\. Groq generates an image-generation prompt from the product name + description
-
-2\. Pollinations.ai generates the image from that prompt
-
-3\. Job status is updated to `completed` (or `failed` with an `error\_message`)
-
-
-
-\### `GET /jobs/:id`
-
-Returns a single job's status and result.
-
-
+### `GET /jobs/:id`
+Check in on a specific job.
 
 ```json
-
 {
-
-&#x20; "id": 5,
-
-&#x20; "product\_name": "Ceramic Coffee Mug",
-
-&#x20; "description": "...",
-
-&#x20; "status": "completed",
-
-&#x20; "prompt": "...",
-
-&#x20; "result\_url": "https://image.pollinations.ai/prompt/...",
-
-&#x20; "error\_message": null,
-
-&#x20; "created\_at": "...",
-
-&#x20; "updated\_at": "...",
-
-&#x20; "product\_image\_url": "https://example.com/mug.jpg"
-
+  "id": 5,
+  "product_name": "Ceramic Coffee Mug",
+  "description": "...",
+  "status": "completed",
+  "prompt": "...",
+  "result_url": "https://image.pollinations.ai/prompt/...",
+  "error_message": null,
+  "created_at": "...",
+  "updated_at": "...",
+  "product_image_url": "https://example.com/mug.jpg"
 }
-
 ```
 
+### `GET /jobs`
+Every job that's ever been submitted, newest first. This is what powers the job list on the frontend.
 
+---
 
-\### `GET /jobs`
+The frontend
 
-Returns all jobs, most recent first.
+Nothing fancy — a form to submit a product, and a live-updating list below it showing every job that's been run, with the generated image once it's ready. It polls the backend automatically, so you just submit and watch.
 
+---
 
+ Running it on your own machine
 
-\## 🖥️ Frontend
-
-
-
-A single-page form + job list:
-
-\- Submit product name, description, and optional image URL
-
-\- Job list polls the backend and shows live status (`pending` → `processing` → `completed`/`failed`)
-
-\- Renders the generated image once a job completes
-
-
-
-\## 🚀 Running Locally
-
-
-
-\### Backend
-
+**Backend:**
 ```bash
-
 cd backend
-
 npm install
 
-\# create a .env file with:
+# create a .env file with:
+# DATABASE_URL=your_neon_connection_string
+# GROQ_API_KEY=your_groq_api_key
 
-\#   DATABASE\_URL=your\_neon\_connection\_string
-
-\#   GROQ\_API\_KEY=your\_groq\_api\_key
-
-node init-db.js      # creates the jobs table (first time only)
-
-node server.js        # starts on http://localhost:5000
-
+node init-db.js     # sets up the jobs table, only needed once
+node server.js       # starts at http://localhost:5000
 ```
 
-
-
-\### Frontend
-
+**Frontend:**
 ```bash
-
 cd frontend
-
 npx serve -l 3000
+```
+*(Just make sure `API_BASE` in `index.html` points at `http://localhost:5000` for local testing.)*
+
+---
+
+ How it's deployed
+
+Both pieces live on Render, deployed straight from this repo:
+
+**Backend** — Web Service
+- Root directory: `backend`
+- Build: `npm install`
+- Start: `node server.js`
+- Env vars: `DATABASE_URL`, `GROQ_API_KEY`
+
+**Frontend** — Static Site
+- Root directory: `frontend`
+- Build: *(none needed)*
+- Publish directory: `.`
+
+---
+
+ Job lifecycle
 
 ```
-
-Update `API\_BASE` in `index.html` to `http://localhost:5000` for local testing.
-
-
-
-\## 📦 Deployment
-
-
-
-Both services are deployed on Render.com:
-
-
-
-\- \*\*Backend\*\*: Web Service
-
-&#x20; - Root directory: `backend`
-
-&#x20; - Build command: `npm install`
-
-&#x20; - Start command: `node server.js`
-
-&#x20; - Env vars: `DATABASE\_URL`, `GROQ\_API\_KEY`
-
-\- \*\*Frontend\*\*: Static Site
-
-&#x20; - Root directory: `frontend`
-
-&#x20; - Build command: \*(none)\*
-
-&#x20; - Publish directory: `.`
-
-
-
-\## 📋 Job Status Lifecycle
-
-
-
+pending  →  processing  →  completed
+                        ↘
+                          failed  (with an error_message explaining why)
 ```
+ Database schema
 
-pending → processing → completed
+`jobs` table:
 
-&#x20;                    └→ failed (with error\_message)
+| Column | Type | Notes |
+|---|---|---|
+| id | serial | primary key |
+| product_name | text | |
+| description | text | |
+| status | text | pending / processing / completed / failed |
+| prompt | text | the LLM-generated image prompt |
+| result_url | text | link to the generated image |
+| error_message | text | filled in only if something failed |
+| product_image_url | text | optional, user-provided |
+| created_at | timestamp | |
+| updated_at | timestamp | |
 
-```
 
 
-
-\## 🗄️ Database Schema (`jobs` table)
-
-
-
-| Column | Type |
-
-|---|---|
-
-| id | serial primary key |
-
-| product\_name | text |
-
-| description | text |
-
-| status | text |
-
-| prompt | text |
-
-| result\_url | text |
-
-| error\_message | text |
-
-| product\_image\_url | text |
-
-| created\_at | timestamp |
-
-| updated\_at | timestamp |
-
+Thanks for checking it out! 
